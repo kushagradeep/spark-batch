@@ -1,0 +1,51 @@
+from pyspark.sql.types import StructType, StringType, IntegerType, StructField, ArrayType
+
+pd.set_option('display.max_rows', None)
+pd.set_option('display.max_columns', None)
+pd.set_option('display.width', None)
+pd.set_option('display.max_colwidth', -1)
+
+
+
+####################DATA PREP ###############################################################
+
+
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+import datetime
+from datetime import datetime
+
+spark = SparkSession \
+    .builder \
+    .appName("CLICK IMPRESSION Data Exploration") \
+    .getOrCreate()
+
+from pyspark.sql.window import Window
+from pyspark.sql.types import StructType, StringType, IntegerType, StructField, ArrayType
+from pyspark.sql import functions as F
+
+df=spark.read.format("csv").option("header","true").option("inferSchema","true").load("file:///data1/daily_data_unoptimized/part-00000-459ed33f-511e-462c-b5e1-7e78753d4e9a-c000.csv")
+
+#df.show(1)
+total_impressions=df.where(F.col("targetCol")==0).count()
+total_clicks=df.where(F.col("targetCol")==1).count()
+
+
+windowSpec=Window.partitionBy("pubClientId")
+
+df=df.withColumn("total_clicks",F.lit(total_clicks))
+df=df.withColumn("total_impressions",F.lit(total_impressions))
+
+partitioned_df=df.withColumn("pub_impression_count",F.sum(F.when(F.col("targetCol")==0,1).otherwise(0)).over(windowSpec))
+partitioned_df=partitioned_df.withColumn("pub_click_count",F.sum(F.when(F.col("targetCol")==1,1).otherwise(0)).over(windowSpec))
+
+partitioned_df=partitioned_df.withColumn("percentage_click",F.round(F.col("pub_click_count")/F.lit(total_clicks)*100,5))
+partitioned_df=partitioned_df.withColumn("percentage_impression",F.round(F.col("pub_impression_count")/F.lit(total_impressions)*100,5))
+
+partitioned_df=partitioned_df.withColumn("ctr",F.round(F.col("pub_click_count")/F.col("pub_impression_count")*100,5))
+#print(total_count_of_clicks_and_impressions)
+
+#partitioned_df.select(["pubClientId","pub_impression_count","total_impressions","percentage_impression","pub_click_count","total_clicks","percentage_click"]).orderBy(F.desc(["percentage_click","percentage_impression"])).show(20)
+
+
+partitioned_df.select(["pubClientId","pub_impression_count","total_impressions","percentage_impression","pub_click_count","total_clicks","percentage_click","ctr"]).orderBy(["percentage_click","percentage_impression","ctr"],ascending=True).show(20)
